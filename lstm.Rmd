@@ -1,0 +1,345 @@
+---
+title: "LSTM"
+author: "Roni Yunis"
+date: "2023-01-18"
+output: html_document
+---
+
+# 6. Model LSTM
+### a. Load Packages
+```{r}
+library(keras)
+library(tensorflow)
+#install_keras()
+#install_tensorflow()
+```
+
+### b. Data Preparation
+```{r}
+#data <- read.csv('data/dataispu.csv', header=T)
+data_group <- ispufix %>% 
+  group_by(Tanggal) %>% 
+  summarise(
+    jum_so2 = sum(so2))
+data_group
+```
+
+```{r}
+ispufix$Tanggal <- as.Date(ispufix$Tanggal, format = "%Y-%m-%d")
+```
+
+```{r}
+ggplot(ispufix, aes(x = Tanggal, y = so2)) +
+  geom_line(color = "blue", size = 1) +
+  ylab("Jumlah SO2") + 
+  xlab("Tanggal") + 
+  scale_x_date(date_breaks = "1 years", date_labels = "%b %Y")+
+  theme(axis.text.x = element_text(size = 10.5)) +
+  theme_minimal()
+```
+
+```{r}
+data_group$Tanggal <- as.Date(data_group$Tanggal, format = "%Y-%m-%d")
+data_group
+```
+
+
+```{r}
+ggplot(data_group, aes(x = Tanggal, y = jum_so2)) +
+  geom_line(color = "blue", size = 1) +
+  ylab("Jumlah SO2") + 
+  xlab("Tanggal") + 
+  scale_x_date(date_breaks = "1 years", date_labels = "%b %Y")+
+  theme(axis.text.x = element_text(size = 10.5)) +
+  theme_minimal()
+
+```
+
+```{r}
+scale_factors <- c(mean(ispufix$so2), sd(ispufix$so2))
+scale_factors
+```
+
+```{r}
+# Menentukan skala data latih
+scaled_train <- ispufix %>%
+  select(so2) %>%
+  mutate(so2 = (so2 - scale_factors[1])/scale_factors[2])
+```
+
+```{r}
+# Menentukan lag Prediksi
+prediction <- 12
+lag <- prediction
+```
+
+```{r}
+# Tranformasi data untuk nilai X
+scaled_train <- as.matrix(scaled_train)
+ 
+# Merubah data ke format kolom
+x_train_data <- t(sapply(
+    1:(length(scaled_train) - lag - prediction + 1),
+    function(x) scaled_train[x:(x + lag - 1), 1]
+  ))
+ 
+# Tranformasi kedalam bentuk 3D
+x_train_arr <- array(
+    data = as.numeric(unlist(x_train_data)),
+    dim = c(
+        nrow(x_train_data),
+        lag,
+        1
+    )
+)
+```
+
+
+```{r}
+# Transformasi data untuk nilai Y
+y_train_data <- t(sapply(
+    (1 + lag):(length(scaled_train) - prediction + 1),
+    function(x) scaled_train[x:(x + prediction - 1)]
+))
+ 
+y_train_arr <- array(
+    data = as.numeric(unlist(y_train_data)),
+    dim = c(
+        nrow(y_train_data),
+        prediction,
+        1
+    )
+)
+```
+
+```{r}
+# Melakukan pengujian untuk 12 observasi dari data latih
+x_test <- ispufix$so2[(nrow(scaled_train) - prediction + 1):nrow(scaled_train)]
+```
+
+```{r}
+# Melakukan pengukuran dengan faktor yang sama dengan data latih
+x_test_scaled <- (x_test - scale_factors[1]) / scale_factors[2]
+ 
+# Menggunakan 12 bulan
+x_pred_arr <- array(
+    data = x_test_scaled,
+    dim = c(
+        1,
+        lag,
+        1
+    )
+)
+```
+
+
+### c. Membuat Model LSTM
+```{r}
+lstm_model <- keras_model_sequential()
+ 
+lstm_model %>%
+  layer_lstm(units = 50, # ukuran layer##
+       batch_input_shape = c(1, 12, 1), # batch size, timesteps, features
+       return_sequences = TRUE,
+       stateful = TRUE) %>%
+  # Tranformasi liner dari input
+  layer_dropout(rate = 0.5) %>%
+  layer_lstm(units = 50,
+        return_sequences = TRUE,
+        stateful = TRUE) %>%
+  layer_dropout(rate = 0.5) %>%
+  time_distributed(keras::layer_dense(units = 1))
+```
+
+```{r}
+# Compile Model
+lstm_model %>%
+    compile(loss = 'mae', optimizer = 'adam', metrics = 'accuracy')
+ 
+summary(lstm_model)
+```
+
+```{r}
+# Fit Model LSTM
+lstm_model %>% fit(
+  x = x_train_arr,
+  y = y_train_arr,
+  batch_size = 1,
+  epochs = 100,
+  verbose = 0,
+  shuffle = FALSE,
+  validation_split = 0.2
+)
+```
+
+### d. Prediksi dengan Model LSTM
+```{r}
+lstm_forecast <- lstm_model %>%
+    predict(x_pred_arr, batch_size = 1) %>%
+    .[, , 1]
+ 
+# Merubah skala data untuk mengambil nilai aslinya
+lstm_forecast <- lstm_forecast * scale_factors[2] + scale_factors[1]
+```
+
+
+```{r}
+# forecast Objek untuk 1 tahun kedepan
+library(timetk)
+
+# Input Time Series
+input_ts <- timetk::tk_ts(ispufix$so2, 
+    start = c(2022, 1), 
+    end = c(2022, 12), 
+    frequency = 12)
+```
+
+```{r}
+input_ts <- input_ts[is.numeric(input_ts)]
+```
+
+```{r}
+input_ts <- ts(input_ts)
+```
+
+```{r}
+library(forecast)
+library(ggplot2)
+```
+
+
+```{r}
+# Forecast Object
+forecast_list <- list(
+    model = NULL,
+    method = "LSTM",
+    mean = lstm_forecast,
+    x = input_ts,
+    fitted = fitted,
+    residuals = as.numeric(input_ts) - is.numeric(fitted)
+  )
+ 
+class(forecast_list) <- "forecast"
+```
+
+```{r}
+forecast_list$mean <- as.matrix(forecast_list$mean)
+forecast_list <- forecast_list[-grep('xvar', names(forecast_list))]
+```
+
+```{r}
+forecast_list <- cbind(forecast_list, mean = lstm_forecast,
+                       mean_se = NA, mean_ci_lower = NA, mean_ci_upper = NA)
+```
+
+### e. Visualisasi Hasil Forecast
+```{r}
+# Visualisasi
+matplot(forecast_list[, c("mean", "mean_ci_lower", "mean_ci_upper")],
+        type = "l", lty = 1, col = "blue", xlab = "Bulan", ylab = "Value")
+        #legend("topright", legend = c("Mean", "Confidence Interval"), lty = 1, col = c("blue", "red"))
+```
+
+
+### f. Prediksi dengan Regressor
+```{r}
+reg <- 100 * runif(nrow(data))
+head(reg)
+```
+
+
+```{r}
+# Data latih dengan Regressor
+scale_factors_reg <- list(
+     mean = mean(reg),
+     sd = sd(reg)
+  )
+ 
+scaled_reg <- (reg - scale_factors_reg$mean)/scale_factors_reg$sd
+ 
+# Tambah nilai 12 untuk prediksi
+scaled_reg_prediction <- (reg[(length(reg) -12): length(reg)] - 
+                      scale_factors_reg$mean) /scale_factors_reg$sd
+```
+
+
+```{r}
+# Mengubah data latih regressor menjadi tensor
+# Kombinasi data latih dengan regressor
+x_train <- cbind(scaled_train, scaled_reg)
+x_train_data <- list()
+ 
+# Tranformasi data ke format kolom
+for (i in 1:ncol(x_train)) {
+    x_train_data[[i]] <- t(sapply(
+        1:(length(x_train[, i]) - lag - prediction + 1),
+        function(x) x_train[x:(x + lag - 1), i]
+    ))
+}
+```
+
+
+```{r}
+# Tranformasi kedalam format 3D
+x_train_arr <- array(
+    data = as.numeric(unlist(x_train_data)),
+    dim = c(
+        nrow(x_train_data[[1]]),
+        lag,
+        2
+    )
+)
+```
+
+
+```{r}
+# combine the data with regressors
+x_test_data <- c(x_test_scaled, scaled_reg_prediction)
+ 
+# transform to tensor
+x_pred_arr <- array(
+    data = x_test_data,
+    dim = c(
+        1,
+        lag,
+        2
+   )
+)
+```
+
+
+```{r}
+# Prediksi model dengan Regressor
+
+```
+
+
+
+### g. Evaluasi Model
+```{r}
+library(Metrics)
+```
+
+```{r}
+# MSE
+MSE_lstm <- mse(input_ts, lstm_forecast)
+MSE_lstm
+```
+
+```{r}
+# RMSE
+RMSE_lstm <- sqrt(MSE_lstm)
+RMSE_lstm
+```
+
+```{r}
+# MAE
+MAE_lstm <- mae(input_ts, lstm_forecast)
+MAE_lstm
+```
+
+```{r}
+# MAPE
+MAPE_lstm <- mape(input_ts, lstm_forecast)
+MAPE_lstm
+```
