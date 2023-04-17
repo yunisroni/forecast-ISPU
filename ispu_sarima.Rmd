@@ -1,0 +1,960 @@
+---
+title: "Air Pollution Time Series Forecasting"
+output: html_document
+date: "2022-10-24"
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# 1. Load Library/Packages
+
+```{r}
+# library untuk manipulasi data
+library(dplyr)
+# library untuk manipulasi data tanggal
+library(lubridate)
+# library untuk menampilkan hasil statistik deskriptif
+library(summarytools)
+# library untuk visualisasi data
+library (ggplot2)
+# library untuk membagi dataset
+library(caret)
+# library untuk model SARIMA
+library (forecast)
+# library tseries
+library (tseries)
+```
+
+# 2. Obstain Data
+
+## a.Import Data
+
+```{r}
+ispudata <- read.csv("data/dataspku.csv")
+```
+
+## b.Menampilkan Contoh Data
+
+```{r}
+# Menampilkan 6 data teratas
+head(ispudata)
+```
+
+```{r}
+# Menampilkan 6 data terbawah
+tail(ispudata)
+```
+
+```{r}
+glimpse(ispudata)
+```
+
+# 3. Scrub Data
+
+## a.Melihat Summary Data
+
+```{r}
+glimpse(ispudata)
+```
+
+Berdasarkan hasil diatas dapat dilihat ada beberapa variabel dengan type
+data character. Untuk analisis variabel partikulat (`pm10`, `so2`, `co`,
+`o3`, `no2`) harus dirubah menjadi type data *numeric*. Sedangkan
+variabel `tanggal` akan dirubah menjadi type data *date*
+
+## b.Merubah Type Data Character Menjadi Numeric
+
+```{r}
+ispudata$pm10 <- as.numeric(ispudata$pm10)
+ispudata$so2 <- as.numeric(ispudata$so2)
+ispudata$co <- as.numeric(ispudata$co)
+ispudata$o3 <- as.numeric(ispudata$o3)
+ispudata$no2 <- as.numeric(ispudata$no2)
+```
+
+```{r}
+glimpse(ispudata)
+```
+
+Berdasarkan hasil diatas bisa dilihat semua kolom partikulat (`pm10`,
+`so2`, `co`, `o3`, `no2`) sudah berubah menjadi type data *numeric*
+
+## c.Merubah Type Data Tanggal Menjadi Date
+
+```{r}
+ispudata_ <- ispudata %>% 
+  mutate(Tanggal = as.Date(Tanggal)) %>% 
+  arrange(Tanggal)
+```
+
+```{r}
+# Menampilkan struktur data setelah type data dirubah
+glimpse(ispudata_)
+```
+
+Bisa dilihat bahwa, type data dari Variabel `Tanggal` sudah berubah
+menjadi type data *date*
+
+## d.Membersihkan Data NA' (Not Available)
+
+```{r}
+# Menampikan variabel dengan baris kosong
+colSums(is.na(ispudata_))
+```
+
+Dari 11 variabel terhadap 8 buah variabel dengan data NA'
+
+```{r}
+# Menghapus Baris Kosong/NA'
+ispuclean <- na.omit(ispudata_)
+summary(ispuclean)
+```
+
+```{r}
+head(ispuclean)
+tail(ispuclean)
+```
+
+```{r}
+colSums(is.na(ispuclean))
+```
+
+Berdasarkan hasil diatas bisa dilihat semua variabel tidak ada lagi data
+yang kosong atau NA'
+
+```{r}
+glimpse(ispuclean)
+```
+
+Jumlah data setelah dihapus data NA' menjadi 9595 baris observasi dengan
+11 variabel. Ada 1 variabel/kolom yang tidak penting, yaitu kolom X
+karena ini adalah nomor baris dari data.
+
+# 4. Explore Data Analysis (EDA)
+
+## a.Tampilkan Dataset
+
+```{r}
+# Memilih kolom yang penting, membuang kolom yang tidak penting
+ispufix <- select(ispuclean, -1, -9)
+glimpse(ispufix)
+```
+
+Sekarang bisa dilihat ada 10 kolom dengan 9595 observasi baris.
+
+```{r}
+write.csv (ispufix, "dataispu.csv")
+```
+
+## b.Menampilkan hasil statistik deskriptif
+
+```{r}
+descr(ispufix)
+```
+
+## c. Visualiasi Tingkat Partikel per Hari
+
+### - Jumlah Partikel PM10
+
+```{r}
+pm10 <- ispufix %>% 
+  ggplot(aes(x = Tanggal, y = pm10)) +
+  geom_point(color = "tomato3", group=1) + 
+  labs( 
+    title = "Jumlah PM10 per Hari", 
+    subtitle = "ISPU Jakarta", 
+    caption = "Roni Yunis", 
+    x = "Tahun", 
+    y = "Jumlah" 
+  ) +
+  theme_minimal()
+pm10
+```
+
+```{r}
+ggplot(data = ispufix, aes(x = Tanggal, y = pm10, color = Kategori)) +
+  geom_line() +
+  labs(title = "Jumlah PM10 Berdasarkan Kategori", 
+       x = "Tanggal", 
+       y = "Partikel PM10 (μg/m3)") +
+  scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e"), 
+                     labels = c("Baik", "Sangat Tidak Sehat", "Sedang", "Tidak Sehat")) +
+  annotate("text", 
+           x = max(ispufix$Tanggal), 
+           y = mean(ispufix$pm10), label = "PM10") +
+  theme_minimal()
+  
+```
+
+### - Jumlah Partikel CO
+
+```{r}
+co <- ispufix %>% 
+  ggplot(aes(x = Tanggal, y = co)) +
+  geom_point(color = "orange", group=1) + 
+  labs( 
+    title = "Jumlah CO per Hari", 
+    subtitle = "ISPU Jakarta", 
+    caption = "Roni Yunis", 
+    x = "Tahun", 
+    y = "Jumlah" 
+  ) +
+  theme_minimal()
+co
+```
+
+```{r}
+ggplot(data = ispufix, aes(x = Tanggal, y = co, color = Kategori)) +
+  geom_line() +
+  labs(title = "Jumlah CO Berdasarkan Kategori", 
+       x = "Tanggal", 
+       y = "Partikel CO (μg/m3)") +
+  scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e"), 
+                     labels = c("Baik", "Sangat Tidak Sehat", "Sedang", "Tidak Sehat")) +
+  annotate("text", 
+           x = max(ispufix$Tanggal), 
+           y = mean(ispufix$co), label = "CO") +
+  theme_minimal()
+  
+```
+
+### - Jumlah Partikel NO2
+
+```{r}
+no2 <- ispufix %>% 
+  ggplot(aes(x = Tanggal, y = no2)) +
+  geom_point(color = "Red", group=1) + 
+  labs( 
+    title = "Jumlah NO2 per Hari", 
+    subtitle = "ISPU Jakarta", 
+    caption = "Roni Yunis", 
+    x = "Tahun", 
+    y = "Jumlah" 
+  ) +
+  theme_minimal()
+no2
+```
+
+```{r}
+ggplot(data = ispufix, aes(x = Tanggal, y = no2, color = Kategori)) +
+  geom_line() +
+  labs(title = "Jumlah NO2 Berdasarkan Kategori", 
+       x = "Tanggal", 
+       y = "Partikel NO2 (μg/m3)") +
+  scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e"), 
+                     labels = c("Baik", "Sangat Tidak Sehat", "Sedang", "Tidak Sehat")) +
+  annotate("text", 
+           x = max(ispufix$Tanggal), 
+           y = mean(ispufix$no2), label = "NO2") +
+  theme_minimal()
+  
+```
+
+### - Jumlah Partikel SO2
+
+```{r}
+so2 <- ispufix %>% 
+  ggplot(aes(x = Tanggal, y = so2)) +
+  geom_point(color = "tomato2", group=1) + 
+  labs( 
+    title = "Jumlah SO2 per Hari", 
+    subtitle = "ISPU Jakarta", 
+    caption = "Roni Yunis", 
+    x = "Tahun", 
+    y = "Jumlah" 
+  ) +
+  theme_minimal()
+so2
+```
+
+```{r}
+ggplot(data = ispufix, aes(x = Tanggal, y = so2, color = Kategori)) +
+  geom_line() +
+  labs(title = "Jumlah SO2 Berdasarkan Kategori", 
+       x = "Tanggal", 
+       y = "Partikel SO2 (μg/m3)") +
+  scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e"), 
+                     labels = c("Baik", "Sangat Tidak Sehat", "Sedang", "Tidak Sehat")) +
+  annotate("text", 
+           x = max(ispufix$Tanggal), 
+           y = mean(ispufix$so2), label = "SO2") +
+  theme_minimal()
+  
+```
+
+### - Jumlah Partikel O3
+
+```{r}
+o3 <- ispufix %>% 
+  ggplot(aes(x = Tanggal, y = o3)) +
+  geom_point(color = "blue", group=1) + 
+  labs( 
+    title = "Jumlah O3 per Hari", 
+    subtitle = "ISPU Jakarta", 
+    caption = "Roni Yunis", 
+    x = "Tahun", 
+    y = "Jumlah" 
+  ) +
+  theme_minimal()
+o3
+```
+
+```{r}
+ggplot(data = ispufix, aes(x = Tanggal, y = o3, color = Kategori)) +
+  geom_line() +
+  labs(title = "Jumlah O3 Berdasarkan Kategori", 
+       x = "Tanggal", 
+       y = "Partikel O3 (μg/m3)") +
+  scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e"), 
+                     labels = c("Baik", "Sangat Tidak Sehat", "Sedang", "Tidak Sehat")) +
+  annotate("text", 
+           x = max(ispufix$Tanggal), 
+           y = mean(ispufix$o3), label = "O3") +
+  theme_minimal()
+  
+```
+
+## d. Menghitung Total Partikel Polusi Udara Per Bulan
+
+### - Total PM10 dan Visualisasi Jumlah PM10 per Bulan
+
+```{r}
+pm10tot <- ispufix %>% 
+  mutate(first_date_month = floor_date(Tanggal, unit = "month")) %>% 
+  group_by(first_date_month) %>% 
+  summarise(jumlahPM10 = sum (pm10))
+pm10tot
+```
+
+```{r}
+ggplot(data = pm10tot, aes(x = first_date_month, y = jumlahPM10, color = "PM10")) +
+geom_line() +
+labs(title = "Jumlah PM10 per Bulan",
+x = "",
+y = "Jumlah PM10 (μg/m3)") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("#0e8eff"), labels = c("PM10"))
+```
+
+### - Total CO dan Visualisasi Jumlah CO per Bulan
+
+```{r}
+cotot <- ispufix %>% 
+  mutate(first_date_month = floor_date(Tanggal, unit = "month")) %>% 
+  group_by(first_date_month) %>% 
+  summarise(jumlahCO = sum (co))
+cotot
+```
+
+```{r}
+ggplot(data = cotot, aes(x = first_date_month, y = jumlahCO, color = "CO")) +
+geom_line() +
+labs(title = "Jumlah CO per Bulan",
+x = "",
+y = "Jumlah CO (μg/m3)") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("#0e0700"), labels = c("CO"))
+```
+
+### - Total O3 dan Visualisasi Jumlah O3 per Bulan
+
+```{r}
+o3tot <- ispufix %>% 
+  mutate(first_date_month = floor_date(Tanggal, unit = "month")) %>% 
+  group_by(first_date_month) %>% 
+  summarise(jumlahO3 = sum (o3))
+o3tot
+```
+
+```{r}
+ggplot(data = o3tot, aes(x = first_date_month, y = jumlahO3, color = "O3")) +
+geom_line() +
+labs(title = "Jumlah O3 per Bulan",
+x = "",
+y = "Jumlah O3 (μg/m3)") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("#d19f00"), labels = c("O3"))
+```
+
+### - Total NO2 dan Visualiasi Jumlah NO2 per Bulan
+
+```{r}
+no2tot <- ispufix %>% 
+  mutate(first_date_month = floor_date(Tanggal, unit = "month")) %>% 
+  group_by(first_date_month) %>% 
+  summarise(jumlahNO2 = sum (no2))
+no2tot
+```
+
+```{r}
+ggplot(data = no2tot, aes(x = first_date_month, y = jumlahNO2, color = "NO2")) +
+geom_line() +
+labs(title = "Jumlah NO2 per Bulan",
+x = "",
+y = "Jumlah NO2 (μg/m3)") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("#30e97f"), labels = c("NO2"))
+```
+
+### - Total SO2 dan Visualisasi Jumlah SO2 per Bulan
+
+```{r}
+so2tot <- ispufix %>% 
+  mutate(first_date_month = floor_date(Tanggal, unit = "month")) %>% 
+  group_by(first_date_month) %>% 
+  summarise(jumlahSO2 = sum (so2))
+so2tot
+```
+
+```{r}
+ggplot(data = so2tot, aes(x = first_date_month, y = jumlahSO2, color = "SO2")) +
+geom_line() +
+labs(title = "Jumlah SO2 per Bulan",
+x = "",
+y = "Jumlah SO2 (μg/m3)") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("blue"), labels = c("SO2"))
+```
+
+### - Visualisasi Jumlah PM10, NO2, O3, SO2, dan CO per Bulan
+
+```{r}
+ggplot(data = pm10tot, aes(x = first_date_month, y = jumlahPM10, color = "PM10")) +
+geom_line() +
+geom_line(data = cotot, aes(x = first_date_month, y = jumlahCO, color = "CO")) +
+geom_line(data = o3tot, aes(x = first_date_month, y = jumlahO3, color = "O3")) +
+geom_line(data = so2tot, aes(x = first_date_month, y = jumlahSO2, color = "SO2")) +
+geom_line(data = no2tot, aes(x = first_date_month, y = jumlahNO2, color = "NO2")) +
+labs(title = "Jumlah Partikel Polusi Udara per Bulan",
+x = "Tahun",
+y = "Jumlah Partikel (μg/m3)", 
+subtitle = "Data terakhir 31 Desember 2021") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e", "#30e97f"),
+labels = c("PM10", "CO", "O3","SO2", "NO2")) +
+theme(legend.position = "bottom")
+
+```
+
+Berdasarkan Gambar diatas bisa dilihat bahwa, rata-rata tingkat O3 dan
+SO2 relatif lebih tinggi dibandingkan dengan 3 partikel yang lainnya.
+
+### - Visualisasi Perubahan Jumlah Partikel dari Waktu ke Waktu
+
+```{r}
+ispu_par <- select(ispufix, -2, -8, -9)
+ispu_par
+```
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+ispu_par %>%
+  pivot_longer(-Tanggal, names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = Tanggal, y = value)) +
+  geom_line() + 
+  facet_grid(variable ~ ., scales = "free_y") +
+  labs(title = "Perubahan Jumlah Partikel dari Waktu ke Waktu") +
+  theme_minimal()
+```
+
+## e. Menampilkan Jumlah Partikel SO2 berdasarkan Stasiun
+
+```{r}
+ispufix %>% 
+ggplot(aes(x=Kategori, y=so2, col=Stasiun, fill=Stasiun)) +
+  geom_jitter() + 
+  geom_boxplot() +
+  labs( 
+    title = "Jumlah Partikel Polusi Udara SO2", 
+    subtitle = "Berdasarkan Kategori", 
+    caption = "ISPU DKI Jakarta", 
+    x = "Kategori", 
+    y = "Jumlah Partikel (μg/m3)" 
+  ) + 
+  theme_minimal()
+```
+
+Jumlah partikel SO2 pada masing-masing stasiun
+
+```{r}
+stasiun_so2 <- ispufix %>% 
+  group_by(Stasiun) %>% 
+  summarise(
+    totso2=sum(so2)
+  )
+stasiun_so2
+```
+
+```{r}
+# Visualiasi jumlah partikel SO2
+
+plot_stasiun <- stasiun_so2 %>% 
+  ggplot(aes(x = Stasiun, y = totso2, col = Stasiun, fill = Stasiun)) +
+  geom_point(size=3) +
+  geom_line(color = "tomato3", group=1) + 
+  labs( 
+    title = "Jumlah Partikel SO2", 
+    subtitle = "Stasiun", 
+    caption = "ISPU DKI Jakarta", 
+    x = "Stasiun", 
+    y = "Jumlah Partikel (μg/m3)" 
+  ) + 
+  theme_minimal() 
+plot_stasiun
+```
+
+Berdasakan gambar diatas bisa disimpulkan adalah jumlah partikel SO2
+yang paling banyak adalah pada Stasiun DKI4 (Lubang Buaya) dengan
+kategori yang paling banyak pada kategori sedang
+
+### - Mengambil data pada Stasiun DKI4 (Lubang Buaya)
+
+```{r}
+df_dki_4 <- subset(ispufix, Stasiun == "DKI4 (Lubang Buaya)")
+head(df_dki_4)
+```
+
+```{r}
+# Membuat tanggal berdasarkan kolom waktu (tahun, bulan, minggu, hari seminggu, dan bulan setahun)
+df_dki_4 <- df_dki_4 %>% 
+  mutate(year = year(Tanggal),
+         month = month(Tanggal),
+         day = day(Tanggal),
+         weekday = wday(Tanggal),
+         year_month = format(Tanggal, format = "%Y-%m"))
+df_dki_4
+```
+
+```{r}
+# Tingkat SO2 per Weekday
+ggplot(data = df_dki_4, aes(x = weekday, y = so2, col=weekday, fill=weekday)) +
+  geom_col() +
+  labs(title = "Tingkat SO2 Per Minggu") + # dari hari Senin s/d Minggu
+  theme_minimal()
+```
+
+Tingkat jumlah partikel SO2 yang paling tinggi sepanjang minggu adalah
+dihari Sabtu=6 dan Minggu=7
+
+```{r}
+# Tingkat SO2 per month
+ggplot(data = df_dki_4, aes(x = month, y = so2, col=month, fill=month)) +
+  geom_col() + 
+  labs(title = "Tingkat SO2 Per Bulan") + # dari bulan Januari s/d Desember
+  theme_minimal()
+```
+
+Tingkat jumlah partikel SO2 yang paling rendah ada pada bulan 2 dan
+paling tinggi pada bulan 11
+
+```{r}
+# Tingkat SO2 per Tahun
+ggplot(data = df_dki_4, aes(x = year_month, y = so2)) +
+  geom_boxplot() +
+  labs(title = "Tingkat SO2 per Tahun") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+Pola partikel SO2 per bulan tampaknya tidak sama setiap tahunnya.
+
+## f. Menguji Stationer Data
+
+Pengujian akan dilakukan pada data df_dki_4 dengan menggunakan uji
+Augmented Dickey-Fuller (ADF) dan Kwiatkowski Phillips Schmidt Shin
+(KPSS). ADF Test Test ini digunakan untuk memahami apakah deret tersebut
+stationer atau tidak. Ada 2 hipotesis yang bisa dikembangkan. H0: deret
+waktu tidak stationer dan memiliki beberapa struktur tergantung waktu
+*H1: deret waktu stationer dan tidak memiliki beberapa struktur
+tergantung waktu* dengan nilai p-value \< 0,05 sehingga HO ditolak, H1
+diterima
+
+KPSS test H0 dan H1 untuk uji KPSS berlawanan dengan uji ADF, sehingga
+hipotesis dalam KPSS adalah H0: deret tren stationer *H1: deret tren
+tidak stationer* dengan nilai p-value \< 0,05 sehingga HO diterima, H1
+ditolak
+
+```{r}
+adf.test(df_dki_4$so2)
+```
+
+```{r}
+kpss.test(df_dki_4$so2, null = "Level")
+```
+
+```{r}
+#differensiasi data_so2 pada stasiun DKI4
+df_dki_4_diff <- diff(df_dki_4$so2)
+
+#dropna dari data yang sudah di-differensiasi
+df_dki_4_diff <- df_dki_4_diff[!is.na(df_dki_4_diff)]
+
+```
+
+```{r}
+#plot data yang sudah di-differensiasi dan di-dropna
+ggplot(data.frame(date = 1:length(df_dki_4_diff), value = df_dki_4_diff), aes(x = date, y = value)) +
+  geom_line(color = "blue") +
+  ggtitle("Stationary timeseries")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_x_continuous(name = "Hari",
+                     breaks = seq(0, length(df_dki_4_diff), by = 365))+ #periode 365 hari
+  scale_y_continuous(name = "Nilai")+
+  theme(axis.text.x=element_text(angle=60,hjust=1))+
+  theme_minimal()
+```
+
+Berdasarkan hasil kedua uji ADF dan KPSS bisa disimpulkan nilai p-value
+\< 0,05, sehingga bisa disimpulkan bahwa data deret waktu sudah
+stationer. Begitu juga dengan hasil visualiasi uji stationer bisa
+dilihat bahwa tidak terlihat tren apapun atau perubahan yang jelas dalam
+varians sehingga deret waktu sudah stationer.
+
+## g. Data Dekomposisi
+
+```{r}
+decom_ts <- ts(data = ispufix$so2, start = c(2016,1), end = c(2021,12), frequency = 12)
+```
+
+```{r}
+# Classical Decomposition
+decom_ts %>% decompose(type = "multiplicative") %>%
+  autoplot() + xlab("Year") +
+  ggtitle("Multiplicative Decomposition of SO2")
+```
+
+```{r}
+decom_ts %>% decompose(type = "additive") %>%
+  autoplot() + xlab("Year") +
+  ggtitle("Additive Decomposition of SO2")
+```
+
+```{r}
+ts_decom <- decompose(decom_ts)
+```
+
+```{r}
+ts_decom_table <- data.frame(seasonal = ts_decom$seasonal, trend = ts_decom$trend, random = ts_decom$random)
+ts_decom_table <- na.omit(ts_decom_table)
+descr(ts_decom_table)
+head(ts_decom_table)
+
+```
+
+```{r}
+ts_decom$seasonal
+```
+
+```{r}
+plot(ts_decom$seasonal)
+```
+
+```{r}
+ts_decom$figure
+```
+
+```{r}
+plot(ts_decom$figure,
+     type = 'b',
+     xlab = 'Month',
+     ylab = 'Seasonality Index',
+     col = 'blue',
+     las = 2
+)
+```
+
+```{r}
+#adjustment decomposition data
+ts_decom_adj <- decom_ts - ts_decom$seasonal
+plot(ts_decom_adj)
+```
+
+```{r}
+ts_decom_adj
+```
+
+```{r}
+descr(ts_decom_adj)
+```
+
+```{r}
+str(ts_decom_adj)
+```
+
+```{r}
+df_data <- as.data.frame(ts_decom_adj)
+df_data
+```
+
+
+# 5. Model
+
+## Model SARIMA
+
+### 1. Membagi Data menjadi data latih dan data uji
+
+```{r}
+# Konversi data menjadi data time series menggunakan data dekomposisi time series 
+dataset <- decom_ts
+plot(dataset)
+ggtsdisplay(dataset)
+```
+
+```{r}
+BoxCox.lambda(dataset)
+```
+
+```{r}
+# Membagi data menjadi data latih dan data uji
+data_train_sarima <- head(dataset, 5*12) # ambil data 5 tahun 2016-2020
+data_test_sarima <- tail(dataset, length(dataset)-length(data_train_sarima)) #ambil data 1 tahun terakhir
+data_train_sarima %>% 
+  decompose() %>% 
+  autoplot()
+```
+
+```{r}
+plot(data_train_sarima)
+```
+
+```{r}
+length(data_train_sarima)
+length(data_test_sarima)
+```
+
+### 2. Mengidentifikasi Diferensi
+
+#### a. Mengidentifikasi Diferensi musiman order 1
+
+```{r}
+data_train_sarima_ds <- diff(data_train_sarima, differences = 1, lag = 12)
+adf.test(data_train_sarima_ds)
+```
+
+Dari hasil diatas bisa disimpulkan bahwa data belum stationer karena
+nilai p-value \> 0,05 yaitu sebesar 0,4503.
+
+#### b. Mengidentifikasi Diferensi non-musiman order 1
+
+```{r}
+data_train_sarima_dss <- diff(data_train_sarima_ds, differences = 1)
+adf.test(data_train_sarima_dss)
+```
+
+Dari hasil diatas bisa disimpulkan bahwa data sudah stationer karena
+nilai p-value \< 0,05 yaitu sebesar 0,01.
+
+### 3. Mengidentifikasi kemungkinan model yang tepat
+
+```{r}
+par(mfrow = c(2,1))
+acf(data_train_sarima_dss, lag.max = 36)
+pacf(data_train_sarima_dss, lag.max = 36)
+```
+
+```{r}
+data_train_sarima_dss
+```
+
+### 4. Fit Model
+
+Menentukan model prediksi yang terbaik yang dapat dilihat dari nilai
+performansi Akaike Information Criteria (AIC) dan nilai signifikan
+(p-value). Model yang lebih baik akan memiliki nilai AIC yang lebih
+rendah
+
+#### a. Fit Model 1
+
+```{r}
+library(lmtest)
+```
+
+```{r}
+# Fit Model 1
+fitmodel1 <- Arima (data_train_sarima_dss,
+                    order = c(2,2,0),
+                    seasonal = c(0,0,1),
+                    lambda = NULL,
+                    include.constant = TRUE)
+coeftest(fitmodel1)
+checkresiduals(fitmodel1)
+ggtsdisplay(fitmodel1$residuals)
+summary(fitmodel1)
+```
+
+```{r}
+Box.test(residuals(fitmodel1), lag = 12, type = "Ljung-Box")
+```
+
+Berdasarkan hasil diatas bisa dilihat bahwa, semua nilai signifikan.
+Secara keseluruhan dari model sudah cukup signifikan dengan nilai
+p-value 0,000000126 dimana nilai signifikan \< 0,05 dan nilai AIC =
+455.9. Sekarang kita akan lakukan fit model yang kedua dengan tujuan
+untuk mendapatkan nilai yang lebih baik.
+
+#### b. Fit Model 2
+
+```{r}
+# Fit Model 2
+fitmodel2 <- Arima (data_train_sarima_dss,
+                    order = c(2,2,1),
+                    seasonal = c(0,0,1),
+                    lambda = NULL,
+                    include.constant = TRUE)
+coeftest(fitmodel2)
+checkresiduals(fitmodel2)
+ggtsdisplay(fitmodel2$residuals)
+summary(fitmodel2)
+```
+
+```{r}
+Box.test(residuals(fitmodel2), lag = 12, type = "Ljung-Box")
+```
+
+Berdasarkan fit model yang ke 2 didapatkan bahwa secara keseluruhan
+model sudah signitifan dengan nilai p-value 0,0000001652 dimana nilai
+signifikan \< 0,05 dan nilai AIC 416.95. Kita akan lanjutkan melakukan
+fit model yang ke 3.
+
+#### c. Fit Model 3
+
+```{r}
+# Fit Model 3
+fitmodel3 <- Arima (data_train_sarima_dss,
+                    order = c(2,2,1),
+                    seasonal = c(0,1,1),
+                    lambda = NULL,
+                    include.constant = TRUE)
+coeftest(fitmodel3)
+checkresiduals(fitmodel3)
+ggtsdisplay(fitmodel3$residuals)
+summary(fitmodel3)
+```
+
+```{r}
+Box.test(residuals(fitmodel3), lag = 12, type = "Ljung-Box")
+```
+
+Berdasarkan fit model yang ke 3 didapatkan bahwa secara keseluruhan
+model sudah signitifan dengan nilai p-value 0,00026 dimana nilai
+signifikan \< 0,05 dan nilai AIC = 333,57.
+
+#### d. Menentukan model terbaik dengan auto.arima
+
+```{r}
+# Menentukan model terbaik
+modelautoarima_so2 <- auto.arima(
+  data_train_sarima_dss,
+  stepwise = FALSE,
+  approximation = FALSE,
+  trace = TRUE)
+modelautoarima_so2
+
+```
+
+```{r}
+Box.test(residuals(modelautoarima_so2), lag = 12, type = "Ljung-Box")
+```
+
+#### e. Fit Model 4
+```{r}
+# Fit Model 4
+fitmodel4 <- Arima (data_train_sarima_dss,
+                    order = c(2,1,1),
+                    seasonal = c(2,1,0),
+                    lambda = NULL,
+                    include.constant = TRUE)
+coeftest(fitmodel4)
+checkresiduals(fitmodel4)
+ggtsdisplay(fitmodel4$residuals)
+summary(fitmodel4)
+```
+
+```{r}
+Box.test(residuals(fitmodel4), lag = 12, type = "Ljung-Box")
+```
+
+```{r}
+hasil_df <- data.frame(
+  id = c(1:5),
+  Model = c("Model1(2,2,0)(0,0,1)", "Model2(2,2,1)(0,0,1)", "Model3(2,2,1)(0,1,1)", "Model4(2,1,1)(2,1,0)","AutoArima(2,0,1)(0,0,1)"),
+  AIC = c(fitmodel1$aic, fitmodel2$aic, fitmodel3$aic, fitmodel4$aic, modelautoarima_so2$aic),
+  BIC = c(fitmodel1$bic, fitmodel2$bic, fitmodel3$bic, fitmodel4$bic, modelautoarima_so2$bic),
+   stringsAsFactors = FALSE
+)
+hasil_df
+```
+
+Berdasarkan modelautoarima didapatkan model (2,0,1)(0,0,1) dengan nilai
+AIC = 370.41. Sehingga dapat disimpulkan bahwa performa fitmodel1 dengan
+nilai AIC = 455.90, fitmodel2 dengan nilai AIC = 416.94, dan fitmodel3
+dengan nilai AIC = 333.56, dan fitmodel4 dengan nilai AIC 310.53.
+Berdasarkan kelima model tersebut, maka perfomansi model *fitmodel4*
+yang terbaik yaitu model (2,1,1)(2,1,0) dengan nilai AIC sebesar 310.53
+dan nilai p-value untuk keseluruhan signitifkan.
+
+### 5. Forecasting dengan data latih
+
+```{r}
+# Menggunakan fitmodel3
+fcast <- forecast(fitmodel4, h=12)
+fcast
+autoplot(fcast)
+```
+
+```{r}
+# membuat prediksi untuk data uji dengan menggunakan model terbaik
+predictSarima <- predict(fcast, data_test_sarima)
+autoplot(predictSarima)
+```
+
+```{r}
+# visualisasi hasil forecast dari model multiplicative
+data_test_sarima %>% 
+  autoplot()+
+  autolayer(modelautoarima_so2$fitted, series = "Auto-Arima(2,0,1)(0,0,1)")+
+  autolayer(data_test_sarima, series = "data test") +
+  autolayer(fitmodel1$fitted, series = "Model-1(2,2,0)(0,0,1)")+
+  autolayer(fitmodel2$fitted, series = "Model-2(2,2,1)(0,0,1)")+
+  autolayer(fitmodel3$fitted, series = "Model-3(2,2,1)(0,1,1)")+
+  autolayer(fitmodel4$fitted, series = "Model-4(2,1,1)(2,1,0)")+
+  autolayer(predictSarima$mean, series = "forecast")
+```
+
+### 6. Evaluasi Model
+
+```{r}
+# Mean squared error (MSE)
+MSESarima <- mean((data_test_sarima - predictSarima$mean)^2)
+MSESarima
+```
+
+```{r}
+# Root mean squared error (RMSE)
+RMSESarima <- sqrt(MSESarima)
+RMSESarima
+```
+
+```{r}
+# Mean absolute error (MAE)
+MAESarima <- mean(abs(data_test_sarima - predictSarima$mean))
+MAESarima
+```
+
+```{r}
+# Mean absolute percentage error (MAPE)
+MAPESarima <- mean(abs(data_test_sarima - predictSarima$mean) / data_test_sarima)
+MAPESarima
+```
+
+
+
