@@ -1,0 +1,1118 @@
+---
+title: "Air Pollution Time Series Forecasting"
+output: html_document
+date: "2022-10-24"
+editor_options: 
+  markdown: 
+    wrap: 72
+---
+
+# 1. Load Library/Packages
+
+```{r}
+# library untuk manipulasi data
+library(dplyr)
+# library untuk manipulasi data tanggal
+library(lubridate)
+# library untuk menampilkan hasil statistik deskriptif
+library(summarytools)
+# library untuk visualisasi data
+library (ggplot2)
+# library untuk membagi dataset
+library(caret)
+# library untuk model Prophet
+library (prophet)
+# library tseries
+library (tseries)
+# libray e1071 untuk model SVR
+library (e1071)
+library(devtools)
+```
+
+# 2. Obstain Data
+
+## a.Import Data
+
+```{r}
+ispudata <- read.csv("data/dataspku.csv")
+```
+
+## b.Menampilkan Contoh Data
+
+```{r}
+# Menampilkan 6 data teratas
+head(ispudata)
+```
+
+```{r}
+# Menampilkan 6 data terbawah
+tail(ispudata)
+```
+
+```{r}
+glimpse(ispudata)
+```
+
+# 3. Scrub Data
+
+## a.Melihat Summary Data
+
+```{r}
+glimpse(ispudata)
+```
+
+Berdasarkan hasil diatas dapat dilihat ada beberapa variabel dengan type
+data character. Untuk analisis variabel partikulat (`pm10`, `so2`, `co`,
+`o3`, `no2`) harus dirubah menjadi type data *numeric*. Sedangkan
+variabel `tanggal` akan dirubah menjadi type data *date*
+
+## b.Merubah Type Data Character Menjadi Numeric
+
+```{r}
+ispudata$pm10 <- as.numeric(ispudata$pm10)
+ispudata$so2 <- as.numeric(ispudata$so2)
+ispudata$co <- as.numeric(ispudata$co)
+ispudata$o3 <- as.numeric(ispudata$o3)
+ispudata$no2 <- as.numeric(ispudata$no2)
+```
+
+```{r}
+glimpse(ispudata)
+```
+
+Berdasarkan hasil diatas bisa dilihat semua kolom partikulat (`pm10`,
+`so2`, `co`, `o3`, `no2`) sudah berubah menjadi type data *numeric*
+
+## c.Merubah Type Data Tanggal Menjadi Date
+
+```{r}
+ispudata_ <- ispudata %>% 
+  mutate(Tanggal = as.Date(Tanggal)) %>% 
+  arrange(Tanggal)
+```
+
+```{r}
+# Menampilkan struktur data setelah type data dirubah
+glimpse(ispudata_)
+```
+
+Bisa dilihat bahwa, type data dari Variabel `Tanggal` sudah berubah
+menjadi type data *date*
+
+## d.Membersihkan Data NA' (Not Available)
+
+```{r}
+# Menampikan variabel dengan baris kosong
+colSums(is.na(ispudata_))
+```
+
+Dari 11 variabel terhadap 8 buah variabel dengan data NA'
+
+```{r}
+# Menghapus Baris Kosong/NA'
+ispuclean <- na.omit(ispudata_)
+summary(ispuclean)
+```
+
+```{r}
+head(ispuclean)
+tail(ispuclean)
+```
+
+```{r}
+colSums(is.na(ispuclean))
+```
+
+Berdasarkan hasil diatas bisa dilihat semua variabel tidak ada lagi data
+yang kosong atau NA'
+
+```{r}
+glimpse(ispuclean)
+```
+
+Jumlah data setelah dihapus data NA' menjadi 9595 baris observasi dengan
+11 variabel. Ada 1 variabel/kolom yang tidak penting, yaitu kolom X
+karena ini adalah nomor baris dari data.
+
+# 4. Explore Data Analysis (EDA)
+
+## a.Tampilkan Dataset
+
+```{r}
+# Memilih kolom yang penting, membuang kolom yang tidak penting
+ispufix <- select(ispuclean, -1, -9)
+glimpse(ispufix)
+```
+
+Sekarang bisa dilihat ada 10 kolom dengan 9595 observasi baris.
+
+```{r}
+write.csv (ispufix, "dataispu.csv")
+```
+
+## b.Menampilkan hasil statistik deskriptif
+
+```{r}
+descr(ispufix)
+```
+
+## c. Visualiasi Tingkat Partikel per Hari
+
+### - Jumlah Partikel PM10
+
+```{r}
+pm10 <- ispufix %>% 
+  ggplot(aes(x = Tanggal, y = pm10)) +
+  geom_point(color = "tomato3", group=1) + 
+  labs( 
+    title = "Jumlah PM10 per Hari", 
+    subtitle = "ISPU Jakarta", 
+    caption = "Roni Yunis", 
+    x = "Tahun", 
+    y = "Jumlah" 
+  ) +
+  theme_minimal()
+pm10
+```
+
+```{r}
+ggplot(data = ispufix, aes(x = Tanggal, y = pm10, color = Kategori)) +
+  geom_line() +
+  labs(title = "Jumlah PM10 Berdasarkan Kategori", 
+       x = "Tanggal", 
+       y = "Partikel PM10 (μg/m3)") +
+  scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e"), 
+                     labels = c("Baik", "Sangat Tidak Sehat", "Sedang", "Tidak Sehat")) +
+  annotate("text", 
+           x = max(ispufix$Tanggal), 
+           y = mean(ispufix$pm10), label = "PM10") +
+  theme_minimal()
+  
+```
+
+### - Jumlah Partikel CO
+
+```{r}
+co <- ispufix %>% 
+  ggplot(aes(x = Tanggal, y = co)) +
+  geom_point(color = "orange", group=1) + 
+  labs( 
+    title = "Jumlah CO per Hari", 
+    subtitle = "ISPU Jakarta", 
+    caption = "Roni Yunis", 
+    x = "Tahun", 
+    y = "Jumlah" 
+  ) +
+  theme_minimal()
+co
+```
+
+```{r}
+ggplot(data = ispufix, aes(x = Tanggal, y = co, color = Kategori)) +
+  geom_line() +
+  labs(title = "Jumlah CO Berdasarkan Kategori", 
+       x = "Tanggal", 
+       y = "Partikel CO (μg/m3)") +
+  scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e"), 
+                     labels = c("Baik", "Sangat Tidak Sehat", "Sedang", "Tidak Sehat")) +
+  annotate("text", 
+           x = max(ispufix$Tanggal), 
+           y = mean(ispufix$co), label = "CO") +
+  theme_minimal()
+  
+```
+
+### - Jumlah Partikel NO2
+
+```{r}
+no2 <- ispufix %>% 
+  ggplot(aes(x = Tanggal, y = no2)) +
+  geom_point(color = "Red", group=1) + 
+  labs( 
+    title = "Jumlah NO2 per Hari", 
+    subtitle = "ISPU Jakarta", 
+    caption = "Roni Yunis", 
+    x = "Tahun", 
+    y = "Jumlah" 
+  ) +
+  theme_minimal()
+no2
+```
+
+```{r}
+ggplot(data = ispufix, aes(x = Tanggal, y = no2, color = Kategori)) +
+  geom_line() +
+  labs(title = "Jumlah NO2 Berdasarkan Kategori", 
+       x = "Tanggal", 
+       y = "Partikel NO2 (μg/m3)") +
+  scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e"), 
+                     labels = c("Baik", "Sangat Tidak Sehat", "Sedang", "Tidak Sehat")) +
+  annotate("text", 
+           x = max(ispufix$Tanggal), 
+           y = mean(ispufix$no2), label = "NO2") +
+  theme_minimal()
+  
+```
+
+### - Jumlah Partikel SO2
+
+```{r}
+so2 <- ispufix %>% 
+  ggplot(aes(x = Tanggal, y = so2)) +
+  geom_point(color = "tomato2", group=1) + 
+  labs( 
+    title = "Jumlah SO2 per Hari", 
+    subtitle = "ISPU Jakarta", 
+    caption = "Roni Yunis", 
+    x = "Tahun", 
+    y = "Jumlah" 
+  ) +
+  theme_minimal()
+so2
+```
+
+```{r}
+ggplot(data = ispufix, aes(x = Tanggal, y = so2, color = Kategori)) +
+  geom_line() +
+  labs(title = "Jumlah SO2 Berdasarkan Kategori", 
+       x = "Tanggal", 
+       y = "Partikel SO2 (μg/m3)") +
+  scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e"), 
+                     labels = c("Baik", "Sangat Tidak Sehat", "Sedang", "Tidak Sehat")) +
+  annotate("text", 
+           x = max(ispufix$Tanggal), 
+           y = mean(ispufix$so2), label = "SO2") +
+  theme_minimal()
+  
+```
+
+### - Jumlah Partikel O3
+
+```{r}
+o3 <- ispufix %>% 
+  ggplot(aes(x = Tanggal, y = o3)) +
+  geom_point(color = "blue", group=1) + 
+  labs( 
+    title = "Jumlah O3 per Hari", 
+    subtitle = "ISPU Jakarta", 
+    caption = "Roni Yunis", 
+    x = "Tahun", 
+    y = "Jumlah" 
+  ) +
+  theme_minimal()
+o3
+```
+
+```{r}
+ggplot(data = ispufix, aes(x = Tanggal, y = o3, color = Kategori)) +
+  geom_line() +
+  labs(title = "Jumlah O3 Berdasarkan Kategori", 
+       x = "Tanggal", 
+       y = "Partikel O3 (μg/m3)") +
+  scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e"), 
+                     labels = c("Baik", "Sangat Tidak Sehat", "Sedang", "Tidak Sehat")) +
+  annotate("text", 
+           x = max(ispufix$Tanggal), 
+           y = mean(ispufix$o3), label = "O3") +
+  theme_minimal()
+  
+```
+
+## d. Menghitung Total Partikel Polusi Udara Per Bulan
+
+### - Total PM10 dan Visualisasi Jumlah PM10 per Bulan
+
+```{r}
+pm10tot <- ispufix %>% 
+  mutate(first_date_month = floor_date(Tanggal, unit = "month")) %>% 
+  group_by(first_date_month) %>% 
+  summarise(jumlahPM10 = sum (pm10))
+pm10tot
+```
+
+```{r}
+ggplot(data = pm10tot, aes(x = first_date_month, y = jumlahPM10, color = "PM10")) +
+geom_line() +
+labs(title = "Jumlah PM10 per Bulan",
+x = "",
+y = "Jumlah PM10 (μg/m3)") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("#0e8eff"), labels = c("PM10"))
+```
+
+### - Total CO dan Visualisasi Jumlah CO per Bulan
+
+```{r}
+cotot <- ispufix %>% 
+  mutate(first_date_month = floor_date(Tanggal, unit = "month")) %>% 
+  group_by(first_date_month) %>% 
+  summarise(jumlahCO = sum (co))
+cotot
+```
+
+```{r}
+ggplot(data = cotot, aes(x = first_date_month, y = jumlahCO, color = "CO")) +
+geom_line() +
+labs(title = "Jumlah CO per Bulan",
+x = "",
+y = "Jumlah CO (μg/m3)") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("#0e0700"), labels = c("CO"))
+```
+
+### - Total O3 dan Visualisasi Jumlah O3 per Bulan
+
+```{r}
+o3tot <- ispufix %>% 
+  mutate(first_date_month = floor_date(Tanggal, unit = "month")) %>% 
+  group_by(first_date_month) %>% 
+  summarise(jumlahO3 = sum (o3))
+o3tot
+```
+
+```{r}
+ggplot(data = o3tot, aes(x = first_date_month, y = jumlahO3, color = "O3")) +
+geom_line() +
+labs(title = "Jumlah O3 per Bulan",
+x = "",
+y = "Jumlah O3 (μg/m3)") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("#d19f00"), labels = c("O3"))
+```
+
+### - Total NO2 dan Visualiasi Jumlah NO2 per Bulan
+
+```{r}
+no2tot <- ispufix %>% 
+  mutate(first_date_month = floor_date(Tanggal, unit = "month")) %>% 
+  group_by(first_date_month) %>% 
+  summarise(jumlahNO2 = sum (no2))
+no2tot
+```
+
+```{r}
+ggplot(data = no2tot, aes(x = first_date_month, y = jumlahNO2, color = "NO2")) +
+geom_line() +
+labs(title = "Jumlah NO2 per Bulan",
+x = "",
+y = "Jumlah NO2 (μg/m3)") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("#30e97f"), labels = c("NO2"))
+```
+
+### - Total SO2 dan Visualisasi Jumlah SO2 per Bulan
+
+```{r}
+so2tot <- ispufix %>% 
+  mutate(first_date_month = floor_date(Tanggal, unit = "month")) %>% 
+  group_by(first_date_month) %>% 
+  summarise(jumlahSO2 = sum (so2))
+so2tot
+```
+
+```{r}
+ggplot(data = so2tot, aes(x = first_date_month, y = jumlahSO2, color = "SO2")) +
+geom_line() +
+labs(title = "Jumlah SO2 per Bulan",
+x = "",
+y = "Jumlah SO2 (μg/m3)") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("blue"), labels = c("SO2"))
+```
+
+### - Visualisasi Jumlah PM10, NO2, O3, SO2, dan CO per Bulan
+
+```{r}
+ggplot(data = pm10tot, aes(x = first_date_month, y = jumlahPM10, color = "PM10")) +
+geom_line() +
+geom_line(data = cotot, aes(x = first_date_month, y = jumlahCO, color = "CO")) +
+geom_line(data = o3tot, aes(x = first_date_month, y = jumlahO3, color = "O3")) +
+geom_line(data = so2tot, aes(x = first_date_month, y = jumlahSO2, color = "SO2")) +
+geom_line(data = no2tot, aes(x = first_date_month, y = jumlahNO2, color = "NO2")) +
+labs(title = "Jumlah Partikel Polusi Udara per Bulan",
+x = "Tahun",
+y = "Jumlah Partikel (μg/m3)", 
+subtitle = "Data terakhir 31 Desember 2021") +
+theme_minimal() +
+scale_x_date(date_labels = "%Y", date_breaks = "1 year") +
+scale_color_manual(values = c("#0e8eff", "#0e0700", "#d19f00", "#fff80e", "#30e97f"),
+labels = c("PM10", "CO", "O3","SO2", "NO2")) +
+theme(legend.position = "bottom")
+
+```
+
+Berdasarkan Gambar diatas bisa dilihat bahwa, rata-rata tingkat O3 dan
+SO2 relatif lebih tinggi dibandingkan dengan 3 partikel yang lainnya.
+
+### - Visualisasi Perubahan Jumlah Partikel dari Waktu ke Waktu
+
+```{r}
+ispu_par <- select(ispufix, -2, -8, -9)
+ispu_par
+```
+
+```{r}
+library(tidyverse)
+```
+
+```{r}
+ispu_par %>%
+  pivot_longer(-Tanggal, names_to = "variable", values_to = "value") %>%
+  ggplot(aes(x = Tanggal, y = value)) +
+  geom_line() + 
+  facet_grid(variable ~ ., scales = "free_y") +
+  labs(title = "Perubahan Jumlah Partikel dari Waktu ke Waktu") +
+  theme_minimal()
+```
+
+## e. Menampilkan Jumlah Partikel SO2 berdasarkan Stasiun
+
+```{r}
+ispufix %>% 
+ggplot(aes(x=Kategori, y=so2, col=Stasiun, fill=Stasiun)) +
+  geom_jitter() + 
+  geom_boxplot() +
+  labs( 
+    title = "Jumlah Partikel Polusi Udara SO2", 
+    subtitle = "Berdasarkan Kategori", 
+    caption = "ISPU DKI Jakarta", 
+    x = "Kategori", 
+    y = "Jumlah Partikel (μg/m3)" 
+  ) + 
+  theme_minimal()
+```
+
+Jumlah partikel SO2 pada masing-masing stasiun
+
+```{r}
+stasiun_so2 <- ispufix %>% 
+  group_by(Stasiun) %>% 
+  summarise(
+    totso2=sum(so2)
+  )
+stasiun_so2
+```
+
+```{r}
+# Visualiasi jumlah partikel SO2
+
+plot_stasiun <- stasiun_so2 %>% 
+  ggplot(aes(x = Stasiun, y = totso2, col = Stasiun, fill = Stasiun)) +
+  geom_point(size=3) +
+  geom_line(color = "tomato3", group=1) + 
+  labs( 
+    title = "Jumlah Partikel SO2", 
+    subtitle = "Stasiun", 
+    caption = "ISPU DKI Jakarta", 
+    x = "Stasiun", 
+    y = "Jumlah Partikel (μg/m3)" 
+  ) + 
+  theme_minimal() 
+plot_stasiun
+```
+
+Berdasakan gambar diatas bisa disimpulkan adalah jumlah partikel SO2
+yang paling banyak adalah pada Stasiun DKI4 (Lubang Buaya) dengan
+kategori yang paling banyak pada kategori sedang
+
+### - Mengambil data pada Stasiun DKI4 (Lubang Buaya)
+
+```{r}
+df_dki_4 <- subset(ispufix, Stasiun == "DKI4 (Lubang Buaya)")
+head(df_dki_4)
+```
+
+```{r}
+# Membuat tanggal berdasarkan kolom waktu (tahun, bulan, minggu, hari seminggu, dan bulan setahun)
+df_dki_4 <- df_dki_4 %>% 
+  mutate(year = year(Tanggal),
+         month = month(Tanggal),
+         day = day(Tanggal),
+         weekday = wday(Tanggal),
+         year_month = format(Tanggal, format = "%Y-%m"))
+df_dki_4
+```
+
+```{r}
+# Tingkat SO2 per Weekday
+ggplot(data = df_dki_4, aes(x = weekday, y = so2, col=weekday, fill=weekday)) +
+  geom_col() +
+  labs(title = "Tingkat SO2 Per Minggu") + # dari hari Senin s/d Minggu
+  theme_minimal()
+```
+
+Tingkat jumlah partikel SO2 yang paling tinggi sepanjang minggu adalah
+dihari Sabtu=6 dan Minggu=7
+
+```{r}
+# Tingkat SO2 per month
+ggplot(data = df_dki_4, aes(x = month, y = so2, col=month, fill=month)) +
+  geom_col() + 
+  labs(title = "Tingkat SO2 Per Bulan") + # dari bulan Januari s/d Desember
+  theme_minimal()
+```
+
+Tingkat jumlah partikel SO2 yang paling rendah ada pada bulan 2 dan
+paling tinggi pada bulan 11
+
+```{r}
+# Tingkat SO2 per Tahun
+ggplot(data = df_dki_4, aes(x = year_month, y = so2)) +
+  geom_boxplot() +
+  labs(title = "Tingkat SO2 per Tahun") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) 
+```
+
+Pola partikel SO2 per bulan tampaknya tidak sama setiap tahunnya.
+
+## f. Menguji Stationer Data
+
+Pengujian akan dilakukan pada data df_dki_4 dengan menggunakan uji
+Augmented Dickey-Fuller (ADF) dan Kwiatkowski Phillips Schmidt Shin
+(KPSS). ADF Test Test ini digunakan untuk memahami apakah deret tersebut
+stationer atau tidak. Ada 2 hipotesis yang bisa dikembangkan. H0: deret
+waktu tidak stationer dan memiliki beberapa struktur tergantung waktu
+*H1: deret waktu stationer dan tidak memiliki beberapa struktur
+tergantung waktu* dengan nilai p-value \< 0,05 sehingga HO ditolak, H1
+diterima
+
+KPSS test H0 dan H1 untuk uji KPSS berlawanan dengan uji ADF, sehingga
+hipotesis dalam KPSS adalah H0: deret tren stationer *H1: deret tren
+tidak stationer* dengan nilai p-value \< 0,05 sehingga HO diterima, H1
+ditolak
+
+```{r}
+adf.test(df_dki_4$so2)
+```
+
+```{r}
+kpss.test(df_dki_4$so2, null = "Level")
+```
+
+```{r}
+#differensiasi data_so2 pada stasiun DKI4
+df_dki_4_diff <- diff(df_dki_4$so2)
+
+#dropna dari data yang sudah di-differensiasi
+df_dki_4_diff <- df_dki_4_diff[!is.na(df_dki_4_diff)]
+
+```
+
+```{r}
+#plot data yang sudah di-differensiasi dan di-dropna
+ggplot(data.frame(date = 1:length(df_dki_4_diff), value = df_dki_4_diff), aes(x = date, y = value)) +
+  geom_line(color = "blue") +
+  ggtitle("Stationary timeseries")+
+  theme(plot.title = element_text(hjust = 0.5))+
+  scale_x_continuous(name = "Hari",
+                     breaks = seq(0, length(df_dki_4_diff), by = 365))+ #periode 365 hari
+  scale_y_continuous(name = "Nilai")+
+  theme(axis.text.x=element_text(angle=60,hjust=1))+
+  theme_minimal()
+```
+
+Berdasarkan hasil kedua uji ADF dan KPSS bisa disimpulkan nilai p-value
+\< 0,05, sehingga bisa disimpulkan bahwa data deret waktu sudah
+stationer. Begitu juga dengan hasil visualiasi uji stationer bisa
+dilihat bahwa tidak terlihat tren apapun atau perubahan yang jelas dalam
+varians sehingga deret waktu sudah stationer.
+
+## g. Data Dekomposisi
+
+```{r}
+decom_ts <- ts(data = ispufix$so2, start = c(2016,1), end = c(2021,12), frequency = 12)
+```
+
+```{r}
+# Classical Decomposition
+decom_ts %>% decompose(type = "multiplicative") %>%
+  autoplot() + xlab("Year") +
+  ggtitle("Multiplicative Decomposition of SO2")
+```
+
+```{r}
+decom_ts %>% decompose(type = "additive") %>%
+  autoplot() + xlab("Year") +
+  ggtitle("Additive Decomposition of SO2")
+```
+
+```{r}
+ts_decom <- decompose(decom_ts)
+```
+
+```{r}
+ts_decom_table <- data.frame(seasonal = ts_decom$seasonal, trend = ts_decom$trend, random = ts_decom$random)
+ts_decom_table <- na.omit(ts_decom_table)
+descr(ts_decom_table)
+head(ts_decom_table)
+
+```
+
+```{r}
+ts_decom$seasonal
+```
+
+```{r}
+plot(ts_decom$seasonal)
+```
+
+```{r}
+ts_decom$figure
+```
+
+```{r}
+plot(ts_decom$figure,
+     type = 'b',
+     xlab = 'Month',
+     ylab = 'Seasonality Index',
+     col = 'blue',
+     las = 2
+)
+```
+
+```{r}
+#adjustment decomposition data
+ts_decom_adj <- decom_ts - ts_decom$seasonal
+plot(ts_decom_adj)
+```
+
+```{r}
+ts_decom_adj
+```
+
+```{r}
+descr(ts_decom_adj)
+```
+
+```{r}
+str(ts_decom_adj)
+```
+
+```{r}
+df_data <- as.data.frame(ts_decom_adj)
+df_data
+```
+
+
+# 5. Model
+## A. Model Prophet
+
+### 1. Membagi Data menjadi data latih dan data uji
+
+```{r}
+# membagi data berdasarkan variabel SO2
+train_data_index <- createDataPartition(ispufix$so2, p=0.7, list = FALSE)
+train_data <- ispufix[train_data_index,]
+test_data <- ispufix[-train_data_index,]
+
+```
+
+```{r}
+dim(train_data)
+dim(test_data)
+```
+
+```{r}
+head(train_data)
+head(test_data)
+```
+
+```{r}
+qplot(Tanggal, so2, data = train_data,
+      main = "Tingkat Polusi Partikel SO2")
+```
+
+```{r}
+qplot(Tanggal, so2, data = test_data,
+      main = "Tingkat Polusi Partikel SO2")
+```
+
+### 2. Mengelompokkan dan Menyiapkan data latih berdasarkan Variabel SO2
+
+```{r}
+daily_so2 <- train_data %>% 
+  group_by(Tanggal) %>% 
+  summarise( 
+    jum_so2=sum(so2)
+  )  
+daily_so2
+
+```
+
+```{r}
+# Merubah format data kedalam ds dan y
+train_daily_so2 <- daily_so2 %>% 
+  rename(
+    ds = "Tanggal",
+    y = "jum_so2"
+    )
+glimpse(train_daily_so2)
+```
+
+### 3. Membuat Model Prophet
+
+```{r}
+prophet_ts <- prophet(daily.seasonality = TRUE, seasonality_prior_scale=0.1) %>% 
+  fit.prophet(train_daily_so2)
+#prophet_ts
+```
+
+### 4. Melakukan Prediksi untuk 2 Tahun ke depan
+
+```{r}
+future_prophet_ts <- make_future_dataframe(prophet_ts, periods = 365*2, freq = "day")
+glimpse(future_prophet_ts)
+```
+
+### 5. Menampilkan hasil prediksi
+
+```{r}
+# visualisasi hasil forecasting
+forecast_ts <- predict(prophet_ts, future_prophet_ts)
+plot(prophet_ts, forecast_ts)
+```
+
+### 6. Menampilkan hasil prediksi berdasarkan komponen
+
+```{r}
+# Visualisasi komponen dari model forecasting
+prophet_plot_components(prophet_ts, forecast_ts) 
+```
+
+Berdasarkan gambar diatas bisa dilihat bahwa, tingkat partikel SO2 untuk
+2 tahun kedepan trennya mengalami peningkatan. Setiap tahun bisa dilihat
+ada peningkatan SO2 yang paling tinggi adalah di bulan Oktober s/d
+Desember.
+
+### 7. Forecast berdasarkan seasonality bulan
+
+```{r}
+# forecast berdasarkan seasionality month (bulan)
+model_ts_monthly <- prophet(changepoint.prior.scale = 0.05, 
+                    yearly.seasonality = FALSE) %>% 
+  add_seasonality(name = "monthly", period = 30.5, fourier.order = 3) %>% 
+  fit.prophet(train_daily_so2) 
+future_ts_monthly <- make_future_dataframe(model_ts_monthly, periods = 365) 
+forecast_ts_monthly <- predict(model_ts_monthly, future_ts_monthly) 
+prophet_plot_components(model_ts_monthly, forecast_ts_monthly)
+```
+
+### 8. Visualisasi Tren Peningkatan Partikel SO2
+
+```{r}
+plot(model_ts_monthly, forecast_ts_monthly)
+```
+
+Berdasarkan gambar tersebut bisa dilihat bahwa ada tren peningkatan
+jumlah partikel SO2 dibandingkan tahun sebelumnya
+
+### 9. forecast berdasarkan seasionality penambahan holiday (hari libur)
+
+```{r}
+# Menetapkan hari libur mulai dari tahun 2016 sampai 2021, misal libur di hari natal 25 desember atau tahun baru setiap tanggal 31 desember
+holiday <- 
+  data.frame( 
+    holiday = "newyeareve", 
+    ds = dmy(c("31-12-2016","31-12-2017", "31-12-2018", "31-12-2019", "31-12-2020", "31-12-2021")), 
+    lower_window = -6, 
+    upper_window = 0 
+  ) 
+holiday 
+```
+
+```{r}
+# visualisasi hasil forecast dengan penambahan efek holiday
+model_ts_holiday <- prophet(changepoint.prior.scale = 0.05, 
+                    holidays = holiday) %>% 
+  add_seasonality(name = "monthly", period = 30.5, fourier.order = 5) %>% 
+  fit.prophet(train_daily_so2) 
+future_ts_holiday <- make_future_dataframe(model_ts_holiday, periods = 365) 
+forecast_ts_holiday <- predict(model_ts_holiday, future_ts_holiday) 
+plot(model_ts_holiday, forecast_ts_holiday)
+```
+
+```{r}
+# Melihat trend holiday effect dari perkiraan
+prophet_plot_components(model_ts_holiday, forecast_ts_holiday)
+```
+
+### 10. Melihat hasil perkiraan berdasarkan trend dan seonality
+
+```{r}
+forecast_ts %>%
+  select(ds, trend, weekly, yearly, yhat)
+```
+
+### 11. Model fine Tuning untuk melihat trend liner dari permintaan
+
+Ini digunakan untuk melihat trend perkiraan dengan bentuk lain yaitu
+dengan menambahkan changepoint
+
+```{r}
+plot(prophet_ts, forecast_ts) + 
+  add_changepoints_to_plot(prophet_ts, threshold = 0) 
+```
+
+### 12. Menyiapkan data Test
+
+```{r}
+daily_so2_test <- test_data %>% 
+  group_by(Tanggal) %>% 
+  summarise( 
+    jum_so2=sum(so2)
+  )  
+daily_so2_test
+
+```
+
+```{r}
+# Merubah format data kedalam ds dan y
+test_daily_so2 <- daily_so2_test %>% 
+  rename(
+    ds = "Tanggal",
+    y = "jum_so2"
+    )
+glimpse(test_daily_so2)
+```
+
+### 13. Model Final
+
+```{r}
+# Menyiapkan model final
+model_final <- prophet(changepoint.prior.scale = 0.05, 
+                       yearly.seasonality = TRUE, 
+                       holidays = holiday) %>% 
+  add_seasonality(name = "monthly", period = 30.5, fourier.order = 5)  %>% 
+  fit.prophet(train_daily_so2) 
+future_final <- make_future_dataframe(model_final, periods = nrow(test_daily_so2) + 1) 
+forecast_final <- predict(model_final, future_final) 
+plot(model_final, forecast_final)
+```
+
+### 14. Melakukan Prediksi dengan Data Uji
+
+```{r}
+# membuat prediksi untuk data uji
+prediction_test <- predict(model_final, test_daily_so2)
+```
+
+```{r}
+# menampilkan hasil prediksi
+plot(model_final, prediction_test)
+```
+
+```{r}
+# Visualisasi komponen dari model forecasting
+prophet_plot_components(model_final, prediction_test)
+```
+
+```{r}
+plot(model_final, forecast_final) + 
+  geom_point(data = test_daily_so2 %>% 
+               mutate(ds = as.POSIXct(ds)), aes(x=ds, y=y), color="tomato3")
+```
+
+Berdasarkan hasil diatas bisa disimpulkan bahwa model dapat memprediksi
+data uji dengan baik dan memperlihatkan bahwa prediksi untuk partikel
+SO2 pada data uji juga trennya meningkat. Sehingga bisa dipastikan bahwa
+hasil prediksi model pada data latih sama dengan hasil prediksi pada
+data uji. Untuk memberikan gambaran seberapa baik model dan seberapa
+akurat hasil prediksi maka akan dilakukan evaluasi dengan beberapa
+matrik evaluasi yaitu: MSE, RSME, MAE, dan MAPE.
+
+### 15. Evaluasi Model (Model Performance)
+
+```{r}
+# Mean squared error (MSE)
+MSEProphet <- mean((test_daily_so2$y - prediction_test$yhat)^2)
+MSEProphet
+```
+
+```{r}
+# Root mean squared error (RMSE)
+RMSEProphet <- sqrt(MSEProphet)
+RMSEProphet
+```
+
+```{r}
+# Mean absolute error (MAE)
+MAEProphet <- mean(abs(test_daily_so2$y - prediction_test$yhat))
+MAEProphet
+```
+
+```{r}
+# Mean absolute percentage error (MAPE)
+MAPEProphet <- mean(abs(test_daily_so2$y - prediction_test$yhat) / test_daily_so2$y)
+MAPEProphet
+```
+
+
+## B. Model SVR
+
+### 1. Membagi Data menjadi data latih dan data uji
+
+```{r}
+set.seed(123)
+split <- createDataPartition(ispufix$so2, p = 0.7, list = FALSE)
+data_train_svr <- ispufix[split,]
+data_test_svr <- ispufix[-split,]
+```
+
+```{r}
+dim(data_train_svr)
+dim(data_test_svr)
+```
+
+```{r}
+qplot(Tanggal, so2, data = data_train_svr,
+      main = "Tingkat Polusi Partikel SO2")
+```
+
+### 2. Membuat Model SVR
+
+```{r}
+model_svr <- svm(so2 ~ ., data = data_train_svr, type = "eps-regression")
+```
+
+```{r}
+# Melatih model
+predic_svr_train <- predict(model_svr, data_train_svr)
+descr(predic_svr_train)
+```
+
+```{r}
+#Menambahkan kolom prediksi pada data pelatihan
+data_train_svr$predic_svr_train <- predic_svr_train
+```
+
+```{r}
+# Menampilkan plot hasil prediksi data pelatihan
+ggplot(data_train_svr, aes(x = so2, y = predic_svr_train)) +
+  geom_point(aes(x = Tanggal, y = so2, shape = 'Nilai Asli', color = 'Nilai Asli'), data=ispufix, size = 2) +
+  geom_point(aes(x = Tanggal, y = predic_svr_train, shape = 'Prediksi', color = 'Prediksi'), data=data_train_svr, size = 1) +
+  geom_abline(intercept = 0, slope = 1) +
+  labs( 
+    title = "Hasil Prediksi Model SVR untuk Partikel SO2", 
+    subtitle = "Data Pelatihan", 
+    caption = "",
+    x = "Tahun", 
+    y = "Jumlah (μg/m3)" 
+  ) +
+  scale_shape_manual(name = "", values = c('Nilai Asli' = 16, 'Prediksi' = 15)) +
+  scale_color_manual(name = "", values = c('Nilai Asli' = 'Black', 'Prediksi' = 'Red')) +
+  theme(legend.position = "bottom") +
+  theme_minimal()
+```
+
+### 3. Memprediksi partikel SO2 pada data pengujian menggunakan model SVR
+
+```{r}
+# prediksi model
+predic_svr <- predict(model_svr, data_test_svr)
+descr(predic_svr)
+```
+
+```{r}
+#Menambahkan kolom prediksi pada data test
+data_test_svr$predic_svr <- predic_svr
+colSums(is.na(data_test_svr))
+```
+
+```{r}
+head(data_test_svr)
+tail(data_test_svr)
+```
+
+### 4. Menampilkan plot hasil prediksi
+
+```{r}
+ggplot(data_test_svr, aes(x = so2, y = predic_svr)) +
+  geom_point(aes(x = Tanggal, y = so2, shape = 'Nilai Asli', color = 'Nilai Asli'), data=ispufix, size = 2) +
+  geom_point(aes(x = Tanggal, y = predic_svr, shape = 'Prediksi', color = 'Prediksi'), data=data_test_svr, size = 1) +
+  geom_abline(intercept = 0, slope = 1) +
+  labs( 
+    title = "Hasil Prediksi Model SVR untuk Partikel SO2", 
+    subtitle = "Data Pengujian", 
+    caption = "", 
+    x = "Tahun", 
+    y = "Jumlah (μg/m3)" 
+  ) +
+  scale_shape_manual(name = "", values = c('Nilai Asli' = 16, 'Prediksi' = 15)) +
+  scale_color_manual(name = "", values = c('Nilai Asli' = 'Green', 'Prediksi' = 'Blue')) +
+  theme(legend.position = "bottom") +
+  theme_minimal()
+```
+
+```{r}
+# Membandingkan nilai asli dengan nilai prediksi
+data_test_svr_compare <- data_test_svr %>%
+  mutate(Nilai_Asli = so2,
+         Nilai_Prediksi = predic_svr) %>%
+  select(Nilai_Asli, Nilai_Prediksi)
+
+# Tampilkan tabel
+data_test_svr_compare
+```
+
+### 5. Evaluasi Model
+
+```{r}
+# Menggunakan library Metrics untuk evaluasi Model SVR
+library(Metrics)
+```
+
+```{r}
+# Menghitung MSE
+MSE_svr <- mse(predic_svr, data_test_svr$so2)
+MSE_svr
+```
+
+```{r}
+# Menghitung RMSE
+RMSE_svr <- sqrt(MSE_svr)
+RMSE_svr
+```
+
+```{r}
+# Menghitung MAE
+MAE_svr <- mae(predic_svr, data_test_svr$so2)
+MAE_svr
+```
+
+```{r}
+# Menghitung MAPE
+MAPE_svr <- mape(predic_svr, data_test_svr$so2)
+MAPE_svr
+```
+
+
+
+# 6. Interpret (Menampilkan Hasil Kinerja Model)
+
+```{r}
+
+model_performance <- data.frame(
+  No  = c(1:4),
+  Model = c("Prophet", "SVR"),
+  MSE = c(MSEProphet, MSE_svr),
+  RMSE = c(RMSEProphet, RMSE_svr),
+  MAE = c(MAEProphet, MAE_svr),
+  MAPE = c(MAPEProphet, MAPE_svr),
+  stringsAsFactors = FALSE
+  
+)
+```
+
+```{r}
+#simpan hasil model performance
+model_performance
+write.csv (model_performance, "modelperform.csv")
+```
+
+Berdasarkan hasil analisis dan evaluasi yang sudah dilakukan didapatkan bahwa:
+<lanjutkan dan harus diinterpretasikan hasilnya>
